@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# ab-remote — 원격 서버 자체의 헤드리스 브라우저로 agent-browser 명령을 보냅니다.
+#   사용법: ab-remote [--profile <이름>] <agent-browser 명령...>
+set -euo pipefail
+
+PROFILE_NAME="main"
+if [ "${1:-}" = "--profile" ]; then PROFILE_NAME="$2"; shift 2; fi
+
+export AGENT_BROWSER_SESSION="remote-$PROFILE_NAME"
+export AGENT_BROWSER_PROFILE="$HOME/.agent-browser-profiles/$PROFILE_NAME"
+mkdir -p "$AGENT_BROWSER_PROFILE"
+
+exec agent-browser "$@"

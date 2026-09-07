@@ -1,0 +1,13 @@
+{
+  "macHost": "macbookpro",
+  "profiles": {
+    "main": {
+      "port": 9222,
+      "description": "일상 로그인 보관용 프로필",
+      "sites": [
+        "https://admin.example.com",
+        "https://shop.example.com/admin"
+      ]
+    }
+  }
+}

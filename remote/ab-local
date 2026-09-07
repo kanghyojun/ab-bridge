@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# ab-local — 맥의 로그인된 브라우저로 agent-browser 명령을 보냅니다. (원격 서버에서 실행)
+#   사용법: ab-local [--profile <이름>] [--reconnect] <agent-browser 명령...>
+set -euo pipefail
+
+SELF="${BASH_SOURCE[0]}"
+while [ -L "$SELF" ]; do SELF="$(readlink "$SELF")"; done
+. "$(cd "$(dirname "$SELF")/.." && pwd)/lib/config.sh"
+
+PROFILE_NAME="main"
+RECONNECT=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --profile)   PROFILE_NAME="$2"; shift 2 ;;
+    --reconnect) RECONNECT=1; shift ;;
+    *) break ;;
+  esac
+done
+
+MAC_HOST="$(ab_cfg macHost "macbookpro")"
+PORT="$(ab_cfg_port "$PROFILE_NAME")"
+export AGENT_BROWSER_SESSION="local-$PROFILE_NAME"
+
+if [ "$RECONNECT" = 1 ]; then
+  agent-browser close >/dev/null 2>&1 || true
+  pidfile="$HOME/.agent-browser/$AGENT_BROWSER_SESSION.pid"
+  if [ -f "$pidfile" ]; then kill "$(cat "$pidfile")" 2>/dev/null || true; fi
+  sleep 1
+fi
+
+TS="$(ab_ts)" || { echo "✗ tailscale CLI를 못 찾았습니다." >&2; exit 1; }
+IP="$("$TS" ip -4 "$MAC_HOST" 2>/dev/null | head -1 || true)"
+if [ -z "$IP" ]; then
+  echo "✗ tailnet에서 '$MAC_HOST'를 못 찾았습니다. $AB_CONFIG 의 macHost를 확인하십시오." >&2
+  exit 1
+fi
+
+# CDP는 반드시 tailnet IP로 붙어야 합니다.
+# MagicDNS 이름을 쓰면 Chrome이 Host 헤더를 보고 거절합니다.
+if ! curl -sf --max-time 5 "http://$IP:$PORT/json/version" >/dev/null; then
+  cat >&2 <<EOF
+✗ 맥의 브라우저에 연결할 수 없습니다 (http://$IP:$PORT)
+
+  원격에서는 고칠 수 없습니다. 사용자에게 맥에서 아래를 실행해 달라고 요청하고 기다리십시오.
+
+      ab-up $PROFILE_NAME
+
+  맥이 자고 있거나 ab-down으로 내려둔 상태일 수 있습니다.
+EOF
+  exit 2
+fi
+
+# 세션이 아직 없으면 반드시 먼저 붙어야 합니다.
+# 안 붙이고 명령을 보내면 agent-browser가 이 서버에 로컬 브라우저를 새로 띄웁니다.
+if ! agent-browser session list 2>/dev/null | grep -Fq "$AGENT_BROWSER_SESSION"; then
+  agent-browser connect "http://$IP:$PORT" >/dev/null
+fi
+
+set +e
+out="$(agent-browser "$@" 2>&1)"; rc=$?
+set -e
+
+# 데몬은 살아있는데 맥과의 연결만 끊긴 경우입니다. 한 번만 다시 붙고 재시도합니다.
+if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q "Browser not launched"; then
+  agent-browser connect "http://$IP:$PORT" >/dev/null
+  exec agent-browser "$@"
+fi
+
+printf '%s\n' "$out"
+exit "$rc"

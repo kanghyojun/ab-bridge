@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# ab-up — 로그인 프로필 브라우저를 띄우고 CDP를 tailnet에 노출합니다. (맥에서 실행)
+#   사용법: ab-up [프로필이름]   (기본 main)
+set -euo pipefail
+
+SELF="${BASH_SOURCE[0]}"
+while [ -L "$SELF" ]; do SELF="$(readlink "$SELF")"; done
+. "$(cd "$(dirname "$SELF")/.." && pwd)/lib/config.sh"
+
+PROFILE_NAME="${1:-main}"
+PROFILE_DIR="$HOME/.agent-browser-profiles/$PROFILE_NAME"
+SESSION="ab-$PROFILE_NAME"
+TS="$(ab_ts)" || TS=""
+
+die() { printf '✗ %s\n' "$*" >&2; exit 1; }
+
+command -v agent-browser >/dev/null || die "agent-browser가 없습니다. npm i -g agent-browser"
+[ -n "$TS" ] || die "Tailscale CLI를 못 찾았습니다."
+
+ab_cfg_init
+PORT="$(ab_cfg_port "$PROFILE_NAME")"
+mkdir -p "$PROFILE_DIR"
+
+cdp_alive() { curl -sf --max-time 3 "http://127.0.0.1:$PORT/json/version" >/dev/null 2>&1; }
+
+if cdp_alive; then
+  echo "• 브라우저가 이미 떠 있습니다 (포트 $PORT)"
+else
+  # 데몬이 살아있으면 --profile 같은 옵션이 조용히 무시되므로 먼저 정리합니다
+  AGENT_BROWSER_SESSION="$SESSION" agent-browser close >/dev/null 2>&1 || true
+  pidfile="$HOME/.agent-browser/$SESSION.pid"
+  if [ -f "$pidfile" ]; then kill "$(cat "$pidfile")" 2>/dev/null || true; fi
+  sleep 1
+
+  echo "• 브라우저를 띄웁니다 (프로필 $PROFILE_NAME, 포트 $PORT)"
+  AGENT_BROWSER_SESSION="$SESSION" agent-browser \
+    --headed \
+    --profile "$PROFILE_DIR" \
+    --args "--remote-debugging-port=$PORT" \
+    open about:blank >/dev/null
+
+  cdp_alive || die "CDP 포트가 안 열렸습니다. agent-browser --debug 로 확인해 보십시오."
+fi
+
+if "$TS" serve status 2>/dev/null | grep -q ":$PORT"; then
+  echo "• tailnet 노출이 이미 켜져 있습니다"
+else
+  echo "• tailnet에 노출합니다 (tailnet 안에서만 보입니다)"
+  "$TS" serve --bg --yes --tcp "$PORT" "tcp://127.0.0.1:$PORT" >/dev/null
+fi
+
+IP="$("$TS" ip -4 2>/dev/null | head -1)"
+cat <<EOF
+
+준비됐습니다.
+  원격에서 붙을 주소 : http://$IP:$PORT
+  프로필             : $PROFILE_DIR
+  설정               : $AB_CONFIG
+
+브라우저 창에서 필요한 사이트에 로그인해두십시오. 로그인은 프로필에 남습니다.
+로그인한 사이트는 설정의 profiles.$PROFILE_NAME.sites 에 적어두면 원격 Claude가 압니다.
+내릴 때는  ab-down $PROFILE_NAME
+EOF

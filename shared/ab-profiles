@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# ab-profiles — 설정에 등록된 프로필과 로그인된 사이트를 보여줍니다.
+set -euo pipefail
+
+SELF="${BASH_SOURCE[0]}"
+while [ -L "$SELF" ]; do SELF="$(readlink "$SELF")"; done
+. "$(cd "$(dirname "$SELF")/.." && pwd)/lib/config.sh"
+
+if [ ! -f "$AB_CONFIG" ]; then
+  echo "설정 파일이 없습니다: $AB_CONFIG"
+  echo "맥에서 ab-up을 한 번 실행하면 기본값으로 만들어집니다."
+  exit 1
+fi
+
+echo "설정: $AB_CONFIG"
+echo "맥 호스트: $(ab_cfg macHost "(없음)")"
+echo
+
+# 설정이 깨져 있으면 원본을 그대로 보여줍니다.
+jq -r '
+  .profiles // {} | to_entries[] |
+  ("[\(.key)] 포트 \(.value.port // "?")  \(.value.description // "")" | sub(" +$"; "")),
+  (if ((.value.sites // []) | length) > 0
+   then (.value.sites[] | "    - \(.)")
+   else "    (로그인된 사이트가 아직 안 적혀 있습니다)"
+   end),
+  ""
+' "$AB_CONFIG" 2>/dev/null || cat "$AB_CONFIG"
