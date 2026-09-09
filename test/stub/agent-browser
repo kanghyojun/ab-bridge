@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+case "$*" in
+  "session list")    printf 'Active sessions:\n  ab-test\n'; exit 0 ;;
+  "set viewport"*)   exec sleep 300 ;;
+  close*)            exec sleep 300 ;;
+  *open*)            exec sleep 300 ;;
+  *)                 exit 0 ;;
+esac
