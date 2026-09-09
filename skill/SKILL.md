@@ -22,6 +22,10 @@ ab-local click @e3
 ab-local screenshot ./shot.png
 ```
 
+화면 크기는 처음 붙을 때 설정값(기본 1440x1080)으로 맞춰집니다. 직접 맞출 필요 없습니다.
+다만 페이지 단위 설정이라 `tab new`로 연 탭에는 안 걸립니다. 새 탭에서 크기가 중요하면
+그 탭에서 `ab-local set viewport 1440 1080`을 한 번 실행하십시오.
+
 어떤 사이트가 로그인돼 있는지는 `ab-profiles`로 확인합니다.
 
 `ab-profiles`가 "설정 파일이 없습니다"로 실패해도 `ab-local`은 그대로 씁니다. `ab-profiles`는

@@ -3,11 +3,23 @@
 #   사용법: ab-remote [--profile <이름>] <agent-browser 명령...>
 set -euo pipefail
 
+SELF="${BASH_SOURCE[0]}"
+while [ -L "$SELF" ]; do SELF="$(readlink "$SELF")"; done
+. "$(cd "$(dirname "$SELF")/.." && pwd)/lib/config.sh"
+
 PROFILE_NAME="main"
 if [ "${1:-}" = "--profile" ]; then PROFILE_NAME="$2"; shift 2; fi
 
 export AGENT_BROWSER_SESSION="remote-$PROFILE_NAME"
 export AGENT_BROWSER_PROFILE="$HOME/.agent-browser-profiles/$PROFILE_NAME"
 mkdir -p "$AGENT_BROWSER_PROFILE"
+
+# 세션이 처음이면 브라우저를 먼저 띄우고 크기를 맞춥니다.
+# 그냥 넘기면 첫 명령이 브라우저를 띄우면서 기본 크기(1280x720)에서 실행됩니다.
+# 첫 명령이 screenshot이면 그대로 틀린 크기로 찍힙니다.
+if ! agent-browser session list 2>/dev/null | grep -Fq "$AGENT_BROWSER_SESSION"; then
+  agent-browser open about:blank >/dev/null 2>&1 || true
+  ab_apply_viewport "$PROFILE_NAME"
+fi
 
 exec agent-browser "$@"

@@ -42,6 +42,12 @@ else
   cdp_alive || die "CDP 포트가 안 열렸습니다. agent-browser --debug 로 확인해 보십시오."
 fi
 
+read -r VW VH <<<"$(ab_cfg_viewport "$PROFILE_NAME")"
+if AGENT_BROWSER_SESSION="$SESSION" agent-browser session list 2>/dev/null | grep -Fq "$SESSION"; then
+  echo "• 화면 크기를 ${VW}x${VH}로 맞춥니다"
+  AGENT_BROWSER_SESSION="$SESSION" ab_apply_viewport "$PROFILE_NAME"
+fi
+
 if "$TS" serve status 2>/dev/null | grep -q ":$PORT"; then
   echo "• tailnet 노출이 이미 켜져 있습니다"
 else
@@ -55,6 +61,7 @@ cat <<EOF
 준비됐습니다.
   원격에서 붙을 주소 : http://$IP:$PORT
   프로필             : $PROFILE_DIR
+  화면 크기          : ${VW}x${VH}
   설정               : $AB_CONFIG
 
 브라우저 창에서 필요한 사이트에 로그인해두십시오. 로그인은 프로필에 남습니다.

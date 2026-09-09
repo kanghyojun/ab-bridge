@@ -4,6 +4,7 @@
     "main": {
       "port": 9222,
       "description": "일상 로그인 보관용 프로필",
+      "viewport": { "width": 1440, "height": 1080 },
       "sites": [
         "https://admin.example.com",
         "https://shop.example.com/admin"

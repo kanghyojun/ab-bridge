@@ -52,8 +52,11 @@ fi
 
 # 세션이 아직 없으면 반드시 먼저 붙어야 합니다.
 # 안 붙이고 명령을 보내면 agent-browser가 이 서버에 로컬 브라우저를 새로 띄웁니다.
+# CDP로 붙으면 화면 크기가 agent-browser 기본값(1280x720)으로 돌아갑니다.
+# 맥에서 ab-up이 맞춰둔 것과 별개라서 붙은 직후에 다시 맞춥니다.
 if ! agent-browser session list 2>/dev/null | grep -Fq "$AGENT_BROWSER_SESSION"; then
   agent-browser connect "http://$IP:$PORT" >/dev/null
+  ab_apply_viewport "$PROFILE_NAME"
 fi
 
 set +e
@@ -63,6 +66,7 @@ set -e
 # 데몬은 살아있는데 맥과의 연결만 끊긴 경우입니다. 한 번만 다시 붙고 재시도합니다.
 if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q "Browser not launched"; then
   agent-browser connect "http://$IP:$PORT" >/dev/null
+  ab_apply_viewport "$PROFILE_NAME"
   exec agent-browser "$@"
 fi
 

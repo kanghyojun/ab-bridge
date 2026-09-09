@@ -48,12 +48,18 @@ ab-local open https://example.com
 {
   "macHost": "macbookpro",
   "profiles": {
-    "main": { "port": 9222, "sites": ["https://admin.example.com"] }
+    "main": {
+      "port": 9222,
+      "viewport": { "width": 1440, "height": 1080 },
+      "sites": ["https://admin.example.com"]
+    }
   }
 }
 ```
 
 `sites`는 그 프로필에 무엇이 로그인돼 있는지 적어두는 자리입니다. 원격 Claude가 `ab-profiles`로 읽습니다.
+
+`viewport`는 페이지 크기입니다. 안 적으면 1440x1080입니다.
 
 ## 알아둘 것
 
@@ -69,6 +75,15 @@ Host header is specified and is not an IP address or localhost.
 
 Chrome의 DNS 리바인딩 방어가 Host 헤더를 검사해서 IP만 통과시킵니다.
 `ab-local`이 `tailscale ip -4 <macHost>`로 IP를 뽑아 쓰는 이유입니다.
+
+**화면 크기는 붙을 때마다 다시 맞춥니다.** Chrome의 `--window-size`로는 못 넘깁니다.
+agent-browser가 `--args`를 콤마로 쪼개서 `--window-size=1440,1080`의 뒤쪽 `1080`을
+열 URL로 해석하고 launch가 통째로 실패합니다. 그래서 브라우저를 띄운 뒤에
+`set viewport`로 맞춥니다. `ab-local`이 CDP로 새로 붙으면 크기가 agent-browser
+기본값인 1280x720으로 돌아가므로, 붙은 직후에 한 번 더 맞춥니다.
+
+페이지 단위 설정이라 **`tab new`로 연 탭에는 안 걸립니다.** 새 탭에서 크기가 중요하면
+그 탭에서 `ab-local set viewport 1440 1080`을 한 번 실행하십시오.
 
 **세션 쿠키는 프로필에 안 남습니다.** 만료시각 없는 쿠키는 Chromium이 디스크에 안 씁니다.
 브라우저를 내리면 사라지므로, 그런 사이트는 `ab-down`을 자주 하지 마십시오.
