@@ -11,8 +11,8 @@
 agent-browser --headed               ab-local ──┐
   --profile ~/.agent-browser-                   │ CDP
     profiles/main                               │
-  --args --remote-debugging-port                │
-        │ 127.0.0.1:9222                        │
+        │ 127.0.0.1:<그때그때 다른 포트>          │
+        │ (프로필의 DevToolsActivePort에 적힘)    │
 tailscale serve --tcp 9222  ◀────────────────────┘
         (tailnet 안에서만)             ab-remote → 이 서버의 헤드리스 브라우저
 ```
@@ -59,7 +59,8 @@ ab-local open https://example.com
 
 `sites`는 그 프로필에 무엇이 로그인돼 있는지 적어두는 자리입니다. 원격 Claude가 `ab-profiles`로 읽습니다.
 
-`viewport`는 페이지 크기입니다. 안 적으면 1440x1080입니다.
+`viewport`는 **`ab-remote`가 쓰는 헤드리스 브라우저의 페이지 크기**입니다. 안 적으면 1440x1080입니다.
+맥 브라우저(`ab-up`, `ab-local`)에는 안 씁니다. 거기는 창 크기를 그대로 따라갑니다.
 
 ## 알아둘 것
 
@@ -76,14 +77,21 @@ Host header is specified and is not an IP address or localhost.
 Chrome의 DNS 리바인딩 방어가 Host 헤더를 검사해서 IP만 통과시킵니다.
 `ab-local`이 `tailscale ip -4 <macHost>`로 IP를 뽑아 쓰는 이유입니다.
 
-**화면 크기는 붙을 때마다 다시 맞춥니다.** Chrome의 `--window-size`로는 못 넘깁니다.
-agent-browser가 `--args`를 콤마로 쪼개서 `--window-size=1440,1080`의 뒤쪽 `1080`을
-열 URL로 해석하고 launch가 통째로 실패합니다. 그래서 브라우저를 띄운 뒤에
-`set viewport`로 맞춥니다. `ab-local`이 CDP로 새로 붙으면 크기가 agent-browser
-기본값인 1280x720으로 돌아가므로, 붙은 직후에 한 번 더 맞춥니다.
+**CDP 포트를 `--args`로 지정하면 안 됩니다.** agent-browser는 Chrome을
+`--remote-debugging-port=0`으로 띄우고, 프로필의 `DevToolsActivePort` 파일에서
+실제 포트를 읽어 붙습니다. 여기에 `--args`로 포트를 덧붙이면 Chrome이 그 파일을
+만들지 않아 데몬이 브라우저를 영영 못 찾습니다. 그러면 `set viewport`나 `get url`
+같은 명령이 전부 답 없이 매달리고, `ab-down`도 브라우저를 못 닫아서 창을 꺼도
+데몬이 다시 띄웁니다. 고정 포트가 필요한 쪽은 tailnet뿐이라, `ab-up`이 실제 포트를
+읽어 `tailscale serve`로 대외 9222에 이어 줍니다. 원격에서 쓰는 주소는 그대로입니다.
 
-페이지 단위 설정이라 **`tab new`로 연 탭에는 안 걸립니다.** 새 탭에서 크기가 중요하면
-그 탭에서 `ab-local set viewport 1440 1080`을 한 번 실행하십시오.
+**맥 브라우저의 화면 크기는 창 크기를 그대로 따라갑니다.** 창을 키우면 페이지도 같이
+넓어지고, 원격에서 찍는 스크린샷도 그 크기로 나옵니다. 따로 맞출 필요가 없습니다.
+
+`set viewport`를 걸면 **오히려 고정됩니다.** CDP Emulation 오버라이드가 붙어서 창과
+페이지가 따로 놀고, 창을 키워도 페이지는 그대로입니다. 맥 브라우저에는 쓰지 마십시오.
+`ab-remote`의 헤드리스 브라우저만 예외입니다. 거기는 따라갈 창이 없어서 설정의
+`viewport`로 크기를 정해줘야 하고, 안 정하면 1280x720으로 굳습니다.
 
 **세션 쿠키는 프로필에 안 남습니다.** 만료시각 없는 쿠키는 Chromium이 디스크에 안 씁니다.
 브라우저를 내리면 사라지므로, 그런 사이트는 `ab-down`을 자주 하지 마십시오.
