@@ -8,13 +8,40 @@ while [ -L "$SELF" ]; do SELF="$(readlink "$SELF")"; done
 . "$(cd "$(dirname "$SELF")/.." && pwd)/lib/config.sh"
 
 PROFILE_NAME="${1:-main}"
+PROFILE_DIR="$HOME/.agent-browser-profiles/$PROFILE_NAME"
 SESSION="ab-$PROFILE_NAME"
 TS="$(ab_ts)" || TS=""
 PORT="$(ab_cfg_port "$PROFILE_NAME")"
 
 [ -n "$TS" ] && "$TS" serve --tcp="$PORT" off >/dev/null 2>&1 || true
-AGENT_BROWSER_SESSION="$SESSION" agent-browser close >/dev/null 2>&1 || true
+
+# 먼저 정중하게 닫아 봅니다. 데몬이 먹통이면 답이 안 오므로 제한시간을 겁니다.
+# 제한이 없으면 여기서 멈춘 채 아래 kill에 영영 도달하지 못합니다.
+# 그러면 데몬이 살아남고, 살아남은 데몬은 브라우저를 닫아도 다시 띄웁니다.
+AGENT_BROWSER_SESSION="$SESSION" \
+  ab_timeout "${AB_CLOSE_TIMEOUT:-5}" agent-browser close >/dev/null 2>&1 || true
+
+# 정중한 종료가 실패했더라도 데몬은 반드시 내립니다.
 pidfile="$HOME/.agent-browser/$SESSION.pid"
-if [ -f "$pidfile" ]; then kill "$(cat "$pidfile")" 2>/dev/null || true; fi
+if [ -f "$pidfile" ]; then
+  ab_kill "$(cat "$pidfile" 2>/dev/null || true)"
+fi
+
+# 데몬을 내린 다음에 남은 창을 정리합니다. 순서를 바꾸면 데몬이 다시 띄웁니다.
+# 이 프로필 디렉터리를 쓰는 창만 고르므로 평소 쓰는 Chrome은 건드리지 않습니다.
+left=0
+for pid in $(pgrep -f "user-data-dir=$PROFILE_DIR" 2>/dev/null || true); do
+  cmd="$(ps -p "$pid" -o command= 2>/dev/null || true)"
+  case "$cmd" in
+    *"Google Chrome Helper"*) continue ;;   # 메인만 내리면 헬퍼는 따라 내려갑니다
+    *"--user-data-dir=$PROFILE_DIR "*|*"--user-data-dir=$PROFILE_DIR") ;;
+    *) continue ;;                          # 이름이 겹치는 다른 프로필은 건너뜁니다
+  esac
+  ab_kill "$pid"
+  left=$((left + 1))
+done
+if [ "$left" -gt 0 ]; then
+  echo "• 닫히지 않고 남아 있던 창 ${left}개를 정리했습니다"
+fi
 
 echo "• 내렸습니다 (프로필 $PROFILE_NAME, 포트 $PORT)"

@@ -21,48 +21,65 @@ ab_cfg_init
 PORT="$(ab_cfg_port "$PROFILE_NAME")"
 mkdir -p "$PROFILE_DIR"
 
-cdp_alive() { curl -sf --max-time 3 "http://127.0.0.1:$PORT/json/version" >/dev/null 2>&1; }
+# Chrome이 실제로 연 CDP 포트. agent-browser가 정하므로 띄울 때마다 달라집니다.
+# Chrome이 프로필 디렉터리에 적어두고, 정상 종료하면 지웁니다.
+cdp_port() {
+  local f="$PROFILE_DIR/DevToolsActivePort"
+  [ -f "$f" ] || return 1
+  local p; p="$(head -1 "$f" 2>/dev/null)"
+  [ -n "$p" ] || return 1
+  printf '%s' "$p"
+}
+
+# 파일이 남아 있어도 브라우저는 죽었을 수 있으니 실제로 물어봅니다.
+cdp_alive() {
+  local p; p="$(cdp_port)" || return 1
+  curl -sf --max-time 3 "http://127.0.0.1:$p/json/version" >/dev/null 2>&1
+}
 
 if cdp_alive; then
   echo "• 브라우저가 이미 떠 있습니다 (포트 $PORT)"
 else
   # 데몬이 살아있으면 --profile 같은 옵션이 조용히 무시되므로 먼저 정리합니다
-  AGENT_BROWSER_SESSION="$SESSION" agent-browser close >/dev/null 2>&1 || true
+  AGENT_BROWSER_SESSION="$SESSION" \
+    ab_timeout "${AB_CLOSE_TIMEOUT:-5}" agent-browser close >/dev/null 2>&1 || true
   pidfile="$HOME/.agent-browser/$SESSION.pid"
-  if [ -f "$pidfile" ]; then kill "$(cat "$pidfile")" 2>/dev/null || true; fi
+  if [ -f "$pidfile" ]; then ab_kill "$(cat "$pidfile" 2>/dev/null || true)"; fi
   sleep 1
 
   echo "• 브라우저를 띄웁니다 (프로필 $PROFILE_NAME, 포트 $PORT)"
-  AGENT_BROWSER_SESSION="$SESSION" agent-browser \
-    --headed \
-    --profile "$PROFILE_DIR" \
-    --args "--remote-debugging-port=$PORT" \
-    open about:blank >/dev/null
+  # CDP 포트를 --args로 지정하면 안 됩니다.
+  # agent-browser는 Chrome을 --remote-debugging-port=0 으로 띄우고
+  # 프로필의 DevToolsActivePort 파일에서 실제 포트를 읽어 붙습니다.
+  # 여기에 포트를 덧붙이면 그 파일이 만들어지지 않아 데몬이 브라우저를
+  # 영영 못 찾고, 그 뒤의 모든 명령이 답 없이 매달립니다.
+  # 고정 포트가 필요한 것은 tailnet 쪽뿐이라 노출 단계에서 이어 붙입니다.
+  AGENT_BROWSER_SESSION="$SESSION" \
+    ab_timeout "${AB_OPEN_TIMEOUT:-60}" agent-browser \
+      --headed \
+      --profile "$PROFILE_DIR" \
+      open about:blank >/dev/null 2>&1 || true
 
   cdp_alive || die "CDP 포트가 안 열렸습니다. agent-browser --debug 로 확인해 보십시오."
 fi
 
-read -r VW VH <<<"$(ab_cfg_viewport "$PROFILE_NAME")"
-if AGENT_BROWSER_SESSION="$SESSION" agent-browser session list 2>/dev/null | grep -Fq "$SESSION"; then
-  echo "• 화면 크기를 ${VW}x${VH}로 맞춥니다"
-  AGENT_BROWSER_SESSION="$SESSION" ab_apply_viewport "$PROFILE_NAME"
-fi
+CDP_PORT="$(cdp_port)" || die "CDP 포트를 못 읽었습니다: $PROFILE_DIR/DevToolsActivePort"
 
-if "$TS" serve status 2>/dev/null | grep -q ":$PORT"; then
-  echo "• tailnet 노출이 이미 켜져 있습니다"
-else
-  echo "• tailnet에 노출합니다 (tailnet 안에서만 보입니다)"
-  "$TS" serve --bg --yes --tcp "$PORT" "tcp://127.0.0.1:$PORT" >/dev/null
-fi
+# 대외 포트는 설정값 그대로 두고 안쪽만 실제 포트로 잇습니다.
+# 브라우저를 다시 띄우면 안쪽 포트가 바뀌므로 매번 다시 겁니다. 같은 값이면 무해합니다.
+echo "• tailnet에 노출합니다 ($PORT → 127.0.0.1:$CDP_PORT, tailnet 안에서만 보입니다)"
+"$TS" serve --bg --yes --tcp "$PORT" "tcp://127.0.0.1:$CDP_PORT" >/dev/null
 
 IP="$("$TS" ip -4 2>/dev/null | head -1)"
 cat <<EOF
 
 준비됐습니다.
   원격에서 붙을 주소 : http://$IP:$PORT
+  맥 안에서 붙을 주소 : http://127.0.0.1:$CDP_PORT
   프로필             : $PROFILE_DIR
-  화면 크기          : ${VW}x${VH}
   설정               : $AB_CONFIG
+
+화면 크기는 창 크기를 그대로 따라갑니다. 창을 키우면 페이지도 같이 넓어집니다.
 
 브라우저 창에서 필요한 사이트에 로그인해두십시오. 로그인은 프로필에 남습니다.
 로그인한 사이트는 설정의 profiles.$PROFILE_NAME.sites 에 적어두면 원격 Claude가 압니다.

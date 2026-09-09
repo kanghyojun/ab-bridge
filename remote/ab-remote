@@ -17,8 +17,10 @@ mkdir -p "$AGENT_BROWSER_PROFILE"
 # 세션이 처음이면 브라우저를 먼저 띄우고 크기를 맞춥니다.
 # 그냥 넘기면 첫 명령이 브라우저를 띄우면서 기본 크기(1280x720)에서 실행됩니다.
 # 첫 명령이 screenshot이면 그대로 틀린 크기로 찍힙니다.
-if ! agent-browser session list 2>/dev/null | grep -Fq "$AGENT_BROWSER_SESSION"; then
-  agent-browser open about:blank >/dev/null 2>&1 || true
+# 여기는 헤드리스라 따라갈 창이 없습니다. 맥 브라우저를 쓰는 ab-up/ab-local과 달리
+# 설정의 viewport로 크기를 정해야 합니다.
+if ! ab_timeout 5 agent-browser session list 2>/dev/null | grep -Fq "$AGENT_BROWSER_SESSION"; then
+  ab_timeout "${AB_OPEN_TIMEOUT:-60}" agent-browser open about:blank >/dev/null 2>&1 || true
   ab_apply_viewport "$PROFILE_NAME"
 fi
 
